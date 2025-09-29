@@ -75,10 +75,7 @@ class OrderCalculatorApp:
                                     text="Рассчитать заказы", 
                                     command=self.process_data,
                                     font=('Arial', 10, 'bold'),
-                                    bg='#4CAF50',
-                                    fg='white',
-                                    width=20,
-                                    state='disabled')
+                                    width=20)
         self.process_btn.pack(pady=10)
     
     def update_process_button_state(self):

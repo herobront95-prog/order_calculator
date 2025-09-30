@@ -158,7 +158,13 @@ class OrderCalculatorApp:
             
             # Фильтруем черный список
             df['Товар'] = df['Товар'].astype(str)
-            df = df[~df['Товар'].isin(blacklist)]
+
+            # Создаем маску: True для строк, которые нужно удалить
+            mask = df['Товар'].apply(lambda product: any(str(weight) in product for weight in blacklist))
+
+            # Оставляем только строки, которые НЕ подпадают под маску
+            df = df[~mask]
+            
             
             # Функция для расчета заказа с точным сопоставлением
             def calculate_order(row):

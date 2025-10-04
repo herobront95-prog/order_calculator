@@ -1,26 +1,21 @@
 import pandas as pd
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 import os
+import re
 
 os.environ['TK_SILENCE_DEPRECATION'] = '1'
 
 class OrderCalculatorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Калькулятор заказов")
-        self.root.geometry("350x250")
+        self.root.title("Калькулятор заказов - Пакетная обработка")
+        self.root.geometry("500x400")
         self.root.resizable(False, False)
         
         self.center_window()
         
-        self.data_file = ""
-        self.limits_file = ""
-        self.output_file = "результат.xlsx"
-        
-        self.data_selected = False
-        self.limits_selected = False
-        
+        self.base_folder = ""
         self.setup_ui()
         
     def center_window(self):
@@ -35,90 +30,188 @@ class OrderCalculatorApp:
         main_frame = tk.Frame(self.root, padx=15, pady=15)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        self.data_status = tk.Label(main_frame, text="Файл data не выбран", 
-                                   font=('Arial', 8), fg='red')
-        self.data_status.pack(anchor='w', pady=(0, 5))
+        title_label = tk.Label(main_frame, 
+                              text="Пакетная обработка торговых точек", 
+                              font=('Arial', 12, 'bold'))
+        title_label.pack(pady=(0, 15))
         
-        data_btn = tk.Button(main_frame, 
-                            text="Выбрать data.xlsx", 
-                            command=self.browse_data_file,
-                            font=('Arial', 10),
-                            width=20)
-        data_btn.pack(pady=3)
+        # Выбор папки с автозаявками
+        folder_frame = tk.Frame(main_frame)
+        folder_frame.pack(fill=tk.X, pady=5)
         
-        self.limits_status = tk.Label(main_frame, text="Файл limits не выбран", 
-                                     font=('Arial', 8), fg='red')
-        self.limits_status.pack(anchor='w', pady=(5, 5))
+        self.folder_status = tk.Label(folder_frame, text="Папка с автозаявками не выбрана", 
+                                     font=('Arial', 8), fg='red', wraplength=450)
+        self.folder_status.pack(anchor='w')
         
-        limits_btn = tk.Button(main_frame, 
-                              text="Выбрать limits.xlsx", 
-                              command=self.browse_limits_file,
+        folder_btn = tk.Button(folder_frame, 
+                              text="Выбрать папку с автозаявками", 
+                              command=self.browse_base_folder,
                               font=('Arial', 10),
-                              width=20)
-        limits_btn.pack(pady=3)
+                              width=25)
+        folder_btn.pack(pady=5)
         
-        output_btn = tk.Button(main_frame, 
-                              text="Имя файла результата", 
-                              command=self.set_output_filename,
-                              font=('Arial', 10),
-                              width=20,
-                              bg='lightgray')
-        output_btn.pack(pady=8)
+        # Кнопка диагностики
+        diagnose_btn = tk.Button(folder_frame,
+                                text="Диагностика папки",
+                                command=self.diagnose_folder,
+                                font=('Arial', 9),
+                                width=15,
+                                bg='lightblue')
+        diagnose_btn.pack(pady=5)
         
-        self.filename_label = tk.Label(main_frame, 
-                                      text=f"Результат: {self.output_file}",
-                                      font=('Arial', 8),
-                                      fg='blue')
-        self.filename_label.pack(pady=2)
+        # Информация о найденных торговых точках
+        info_frame = tk.Frame(main_frame)
+        info_frame.pack(fill=tk.X, pady=10)
         
+        self.info_label = tk.Label(info_frame, 
+                                  text="Торговые точки не найдены",
+                                  font=('Arial', 9),
+                                  justify=tk.LEFT)
+        self.info_label.pack(anchor='w')
+        
+        # Прогресс бар
+        progress_frame = tk.Frame(main_frame)
+        progress_frame.pack(fill=tk.X, pady=10)
+        
+        self.progress = ttk.Progressbar(progress_frame, orient=tk.HORIZONTAL, length=450, mode='determinate')
+        self.progress.pack(pady=5)
+        
+        self.progress_label = tk.Label(progress_frame, text="", font=('Arial', 8))
+        self.progress_label.pack()
+        
+        # Кнопка обработки
         self.process_btn = tk.Button(main_frame, 
-                                    text="Рассчитать заказы", 
-                                    command=self.process_data,
+                                    text="Обработать все торговые точки", 
+                                    command=self.process_all_stores,
                                     font=('Arial', 10, 'bold'),
-                                    width=20)
-        self.process_btn.pack(pady=10)
+                                    width=25,
+                                    state='disabled')
+        self.process_btn.pack(pady=15)
+        
+        # Лог обработки
+        log_frame = tk.Frame(main_frame)
+        log_frame.pack(fill=tk.BOTH, expand=True)
+        
+        log_label = tk.Label(log_frame, text="Лог обработки:", font=('Arial', 9, 'bold'))
+        log_label.pack(anchor='w')
+        
+        self.log_text = tk.Text(log_frame, height=8, width=60, font=('Arial', 8))
+        scrollbar = tk.Scrollbar(log_frame, command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=scrollbar.set)
+        
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     
-    def update_process_button_state(self):
-        if self.data_selected and self.limits_selected:
-            self.process_btn.config(state='normal', bg='#4CAF50')
-        else:
-            self.process_btn.config(state='disabled', bg='gray')
+    def browse_base_folder(self):
+        folder = filedialog.askdirectory(title="Выберите папку с автозаявками")
+        if folder:
+            self.base_folder = folder
+            display_name = os.path.basename(folder)
+            self.folder_status.config(text=f"✓ {folder}", fg='green')
+            
+            # Поиск торговых точек
+            stores = self.find_stores(folder)
+            if stores:
+                self.process_btn.config(state='normal', bg='#4CAF50')
+                store_names = [store['name'] for store in stores]
+                self.info_label.config(text=f"Найдено торговых точек: {len(stores)}\nПапки: {', '.join(store_names)}")
+            else:
+                self.process_btn.config(state='disabled', bg='gray')
+                self.info_label.config(text="Торговые точки не найдены")
     
-    def set_output_filename(self):
-        filename = filedialog.asksaveasfilename(
-            title="Сохранить результат как...",
-            defaultextension=".xlsx",
-            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
-            initialfile=self.output_file
-        )
-        if filename:
-            self.output_file = filename
-            display_name = os.path.basename(filename)
-            self.filename_label.config(text=f"Результат: {display_name}")
+    def find_stores(self, base_folder):
+        """Находит все папки с торговыми точками в базовой папке"""
+        stores = []
+        
+        for item in os.listdir(base_folder):
+            item_path = os.path.join(base_folder, item)
+            if os.path.isdir(item_path):
+                # Ищем файлы данных с разными вариантами имен
+                data_files = self.find_data_files(item_path)
+                limits_files = self.find_limits_files(item_path)
+                
+                if data_files and limits_files:
+                    # Берем первый найденный файл каждого типа
+                    data_file = data_files[0]
+                    limits_file = limits_files[0]
+                    
+                    stores.append({
+                        'name': item,
+                        'folder': item_path,
+                        'data_file': data_file,
+                        'limits_file': limits_file
+                    })
+        
+        return stores
     
-    def browse_data_file(self):
-        filename = filedialog.askopenfilename(
-            title="Выберите файл с данными",
-            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
-        )
-        if filename:
-            self.data_file = filename
-            self.data_selected = True
-            display_name = os.path.basename(filename)
-            self.data_status.config(text=f"✓ {display_name}", fg='green')
-            self.update_process_button_state()
+    def find_data_files(self, folder):
+        """Находит файлы с данными в папке"""
+        possible_names = [
+            "Data.xlsx", "data.xlsx", "DATA.xlsx",
+            "Data.xls", "data.xls", "DATA.xls"
+        ]
+        
+        found_files = []
+        for name in possible_names:
+            file_path = os.path.join(folder, name)
+            if os.path.exists(file_path):
+                found_files.append(file_path)
+        
+        return found_files
     
-    def browse_limits_file(self):
-        filename = filedialog.askopenfilename(
-            title="Выберите файл с лимитами",
-            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
-        )
-        if filename:
-            self.limits_file = filename
-            self.limits_selected = True
-            display_name = os.path.basename(filename)
-            self.limits_status.config(text=f"✓ {display_name}", fg='green')
-            self.update_process_button_state()
+    def find_limits_files(self, folder):
+        """Находит файлы с лимитами в папке"""
+        possible_names = [
+            "limits.xlsx", "Limits.xlsx", "LIMITS.xlsx",
+            "limits.xls", "Limits.xls", "LIMITS.xls"
+        ]
+        
+        found_files = []
+        for name in possible_names:
+            file_path = os.path.join(folder, name)
+            if os.path.exists(file_path):
+                found_files.append(file_path)
+        
+        return found_files
+    
+    def diagnose_folder(self):
+        """Выполняет диагностику выбранной папки"""
+        if not self.base_folder:
+            messagebox.showwarning("Диагностика", "Сначала выберите папку")
+            return
+        
+        self.log_text.delete(1.0, tk.END)
+        self.log_message("=== ДИАГНОСТИКА ПАПКИ ===")
+        self.log_message(f"Папка: {self.base_folder}")
+        
+        items = os.listdir(self.base_folder)
+        self.log_message(f"Объектов в папке: {len(items)}")
+        
+        for i, item in enumerate(items):
+            item_path = os.path.join(self.base_folder, item)
+            if os.path.isdir(item_path):
+                self.log_message(f"\n[{i+1}] Папка: {item}")
+                
+                # Проверяем файлы в папке
+                data_files = self.find_data_files(item_path)
+                limits_files = self.find_limits_files(item_path)
+                
+                if data_files:
+                    self.log_message(f"   ✓ Найдены файлы данных: {[os.path.basename(f) for f in data_files]}")
+                else:
+                    self.log_message(f"   ✗ Файлы данных не найдены")
+                
+                if limits_files:
+                    self.log_message(f"   ✓ Найдены файлы лимитов: {[os.path.basename(f) for f in limits_files]}")
+                else:
+                    self.log_message(f"   ✗ Файлы лимитов не найдены")
+                
+                if data_files and limits_files:
+                    self.log_message(f"   ✓ Папка готова к обработке")
+                else:
+                    self.log_message(f"   ✗ Папка НЕ готова к обработке")
+        
+        self.log_message("\n=== ДИАГНОСТИКА ЗАВЕРШЕНА ===")
     
     def find_best_match(self, product_name, limits_dict):
         """
@@ -138,33 +231,41 @@ class OrderCalculatorApp:
         
         return best_match
     
-    def process_data(self):
+    def process_store(self, store_info):
+        """Обрабатывает одну торговую точку"""
         try:
-            self.process_btn.config(state='disabled', bg='gray', text="Обработка...")
-            self.root.update()
+            data_file = store_info['data_file']
+            limits_file = store_info['limits_file']
+            store_name = store_info['name']
+            output_file = os.path.join(self.base_folder, f"{store_name}.xlsx")
             
             # Загрузка данных
-            df = pd.read_excel(self.data_file)
-            limits_df = pd.read_excel(self.limits_file, sheet_name="Limits")
-            blacklist_df = pd.read_excel(self.limits_file, sheet_name="BlackList")
+            df = pd.read_excel(data_file)
+            limits_df = pd.read_excel(limits_file, sheet_name="Limits")
+            blacklist_df = pd.read_excel(limits_file, sheet_name="BlackList")
             
             # Обрабатываем пустые значения в столбце "Остаток"
-            # Заменяем NaN, пустые строки и другие нечисловые значения на 0
             df['Остаток'] = pd.to_numeric(df['Остаток'], errors='coerce').fillna(0)
             
             # Создаем словари
             limits = dict(zip(limits_df['Товар'].astype(str), limits_df['Лимиты']))
             blacklist = set(blacklist_df['Товар'].astype(str))
             
-            # Фильтруем черный список
+            # Фильтруем черный список - улучшенная версия
             df['Товар'] = df['Товар'].astype(str)
 
-            # Создаем маску: True для строк, которые нужно удалить
-            mask = df['Товар'].apply(lambda product: any(str(weight) in product for weight in blacklist))
+            # Создаем маску с использованием границ слов
+            def is_blacklisted(product):
+                for black_item in blacklist:
+                    # Ищем black_item как отдельное слово
+                    pattern = r'\b' + re.escape(black_item) + r'\b'
+                    if re.search(pattern, product, re.IGNORECASE):
+                        return True
+                return False
 
-            # Оставляем только строки, которые НЕ подпадают под маску
+            # Оставляем только строки, которые НЕ подпадают под черный список
+            mask = df['Товар'].apply(is_blacklisted)
             df = df[~mask]
-            
             
             # Функция для расчета заказа с точным сопоставлением
             def calculate_order(row):
@@ -191,22 +292,59 @@ class OrderCalculatorApp:
             df = df.drop('Использованный_лимит', axis=1)
             
             # Сохраняем результат
-            df.to_excel(self.output_file, index=False)
+            df.to_excel(output_file, index=False)
             
-            messagebox.showinfo("Успех", 
-                               f"Обработка завершена успешно!\n\n"
-                               f"Файл сохранен как:\n{self.output_file}")
+            return True, f"✓ {store_name} - Успешно"
             
-        except FileNotFoundError as e:
-            messagebox.showerror("Ошибка файла", f"Файл не найден:\n{str(e)}")
-        except KeyError as e:
-            messagebox.showerror("Ошибка данных", f"Отсутствует необходимая колонка:\n{str(e)}")
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Произошла непредвиденная ошибка:\n{str(e)}")
+            return False, f"✗ {store_name} - Ошибка: {str(e)}"
+    
+    def log_message(self, message):
+        """Добавляет сообщение в лог"""
+        self.log_text.insert(tk.END, message + "\n")
+        self.log_text.see(tk.END)
+        self.root.update()
+    
+    def process_all_stores(self):
+        """Обрабатывает все торговые точки"""
+        if not self.base_folder:
+            messagebox.showerror("Ошибка", "Сначала выберите папку с автозаявками")
+            return
         
-        finally:
-            self.process_btn.config(state='normal', bg='#4CAF50', text="Рассчитать заказы")
-            self.update_process_button_state()
+        stores = self.find_stores(self.base_folder)
+        if not stores:
+            messagebox.showerror("Ошибка", "Торговые точки не найдены")
+            return
+        
+        # Настройка интерфейса для обработки
+        self.process_btn.config(state='disabled', bg='gray', text="Обработка...")
+        self.log_text.delete(1.0, tk.END)
+        self.progress['value'] = 0
+        self.progress['maximum'] = len(stores)
+        
+        # Обработка каждой торговой точки
+        success_count = 0
+        for i, store_info in enumerate(stores):
+            store_name = store_info['name']
+            self.progress_label.config(text=f"Обработка: {store_name} ({i+1}/{len(stores)})")
+            self.progress['value'] = i
+            
+            success, message = self.process_store(store_info)
+            
+            self.log_message(message)
+            if success:
+                success_count += 1
+            
+            self.root.update()
+        
+        # Завершение
+        self.progress['value'] = len(stores)
+        self.progress_label.config(text="Обработка завершена")
+        self.process_btn.config(state='normal', bg='#4CAF50', text="Обработать все торговые точки")
+        
+        messagebox.showinfo("Завершено", 
+                          f"Обработка завершена!\n\n"
+                          f"Успешно: {success_count} из {len(stores)}")
 
 def main():
     try:
